@@ -21,14 +21,25 @@ jobs:
           DIR=$(dirname "$PROJ")
           echo "DIR=$DIR" >> $GITHUB_ENV
 
-      - name: Fix Hallucinated API in Theme.swift
+      - name: Auto-Fix Missing Imports & Hallucinated APIs
         run: |
           python3 -c "
           import glob
+
+          # 1. Fix Theme.swift glassEffect bug
           for p in glob.glob('**/Theme.swift', recursive=True):
               with open(p, 'r') as f:
                   c = f.read()
               c = c.replace('self.glassEffect(.regular, in: shape)', 'self.background(shape.fill(.ultraThinMaterial))')
+              with open(p, 'w') as f:
+                  f.write(c)
+
+          # 2. Fix HomeView.swift missing CoreLocation & MapKit imports
+          for p in glob.glob('**/HomeView.swift', recursive=True):
+              with open(p, 'r') as f:
+                  c = f.read()
+              if 'import CoreLocation' not in c:
+                  c = c.replace('import SwiftUI', 'import SwiftUI\nimport CoreLocation\nimport MapKit')
               with open(p, 'w') as f:
                   f.write(c)
           "
