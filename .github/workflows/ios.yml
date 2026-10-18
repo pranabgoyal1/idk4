@@ -1,0 +1,79 @@
+name: Build iOS App
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    name: Build IPA
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Locate Project
+        id: locate
+        run: |
+          PROJ=$(find . -name "PitampuraBites.xcodeproj" | head -n 1)
+          DIR=$(dirname "$PROJ")
+          echo "DIR=$DIR" >> $GITHUB_ENV
+
+      - name: Fix Hallucinated API in Theme.swift
+        run: |
+          python3 -c "
+          import glob
+          for p in glob.glob('**/Theme.swift', recursive=True):
+              with open(p, 'r') as f:
+                  c = f.read()
+              c = c.replace('self.glassEffect(.regular, in: shape)', 'self.background(shape.fill(.ultraThinMaterial))')
+              with open(p, 'w') as f:
+                  f.write(c)
+          "
+
+      - name: Ensure Shared Scheme Exists
+        run: |
+          mkdir -p "$DIR/PitampuraBites.xcodeproj/xcshareddata/xcschemes"
+          cat << 'EOF' > "$DIR/PitampuraBites.xcodeproj/xcshareddata/xcschemes/PitampuraBites.xcscheme"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Scheme LastUpgradeVersion="1600" version="1.7">
+             <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES">
+                <BuildActionEntries>
+                   <BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">
+                      <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="105FC5792E9EAD3100EA8BCF" BuildableName="PitampuraBites.app" BlueprintName="PitampuraBites" ReferencedContainer="container:PitampuraBites.xcodeproj">
+                      </BuildableReference>
+                   </BuildActionEntry>
+                </BuildActionEntries>
+             </BuildAction>
+             <ArchiveAction buildConfiguration="Release" revealArchiveInOrganizer="YES"></ArchiveAction>
+          </Scheme>
+          EOF
+
+      - name: Build Archive
+        run: |
+          cd "$DIR"
+          xcodebuild clean archive \
+            -project PitampuraBites.xcodeproj \
+            -scheme PitampuraBites \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/PitampuraBites.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
+
+      - name: Package IPA
+        run: |
+          cd "$DIR"
+          mkdir -p Payload
+          cp -r "build/PitampuraBites.xcarchive/Products/Applications/PitampuraBites.app" Payload/
+          zip -r PitampuraBites.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PitampuraBites-App
+          path: ${{ env.DIR }}/PitampuraBites.ipa
